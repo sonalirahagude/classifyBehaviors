@@ -1,0 +1,10 @@
+Package: classifyBehaviors
+Type: Package
+Title: Behavior classification from accelerometer and GPS data
+Version: 1.0
+Date: 2014-12-12
+Author: Katherine Ellis
+Maintainer: Katherine Ellis <kellis@ucsd.edu>
+Description: Functions for classifying physical behaviors from accelerometer and GPS data. Includes functions to extract features from sensor data, train models, and apply models.
+Depends:stringr,randomForest,HMM,tools,signal,caret
+License: GPL-2
