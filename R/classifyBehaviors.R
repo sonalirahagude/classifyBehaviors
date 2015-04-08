@@ -32,6 +32,13 @@ classify = function(accelerometers=NULL, GPS=NULL, modelName, saveDir, names=NUL
     stop("No data directories found")
   }
 }
+
+# start here
+# parameters
+## annotations - labels file or directory
+## accelerometers - accelerometer data file or directory
+## GPS - GPS dat file or directory
+## winSize - window size (60 secs or 1 minute by default, all features will be aggregated to this size)
 looXval = function(annotations, accelerometers=NULL, GPS=NULL, winSize=60, saveDir="~/xval_predictions", names=NULL, strat=TRUE) {
   # annotations
   labelDir = annotationsToLabels(annotations, winSize, names)
@@ -52,6 +59,7 @@ calcPerformance = function(annotations, predictions, names=NULL, winSize=NULL, c
   calcPerformanceFromLabels(labelDir, predictions, names, combineStanding)
 }
 
+# converts annotations file to labels that can be used directly by algorithm
 annotationsToLabels = function(annotations, winSize, names=NULL) {
   if (!file.exists(annotations)) {
     stop("annotation file not found")
@@ -64,6 +72,7 @@ annotationsToLabels = function(annotations, winSize, names=NULL) {
     }
   } else {
     labelDir = paste(file_path_sans_ext(annotations), "Labels", as.character(winSize), sep="_")
+    print(labelDir)
     if (!file.exists(labelDir)) {
       cat("extracting annotations...\n")
       labels = extractLabelsSingleFile(annotations, labelDir, winSize)
@@ -119,6 +128,7 @@ looXvalFromFeats = function(labelDir, featDirs, saveDir, names=NULL, strat=TRUE)
   }
   for (i in 1:length(names)) {
     cat("test subject:", names[i], "\n")
+    # leave i out
     testNames = names[i]
     trainNames = names[-i]
     trainTest(trainLabelDir=labelDir, trainFeatDirs=featDirs, trainNames=trainNames, testNames=testNames, saveDir1=saveDir1, saveDir2=saveDir, strat=strat)
@@ -184,6 +194,7 @@ trainTest = function(trainLabelDir, testLabelDir=NULL, trainFeatDirs, testFeatDi
 trainRF = function(labelDir, featDirs, names, combineStanding=FALSE, strat=TRUE) {
   cat("loading training data\n")
   train = loadData(labelDir, featDirs, names)
+  # train without the labels, load data will return labels in train[[1]] and all features in train[[2]]
   trainDat = train[[2]]
   trainDat$timestamp = NULL
   trainDat$PtID = NULL
@@ -325,6 +336,7 @@ computeTransProbs = function(stateSeq) {
   # loop through state sequence and count transitions
   x = stateSeq[1]
   i = 2
+  # skip nulls until you get the first non NULL state
   while (x == "NULL") {
     x = stateSeq[i]
     i = i + 1
@@ -351,13 +363,22 @@ computeEmissionProbs = function(rf) {
   states = sort(rf$classes)
   symbols = sort(rf$classes)
   S = length(states)
-  # set up the transition Probability matrix
+  # set up the emission Probability matrix
   emissionProbs = matrix(0, nrow=S, ncol=S)
   rownames(emissionProbs) = states
   colnames(emissionProbs) = states
   # loop through state sequence and count transitions
   for (k in 1:length(states)) {
+    # obtain all the rows where the ground truth is state[k], now, for every observation, find out the no 
+    # of times the observation is emitted by state k, that is, the total number of votes for k emitting
+    # some state i over all related data points i.e. all rows in the votes matrix where groundTruth == states 
+    # the vote matrix contains fractional values so that each row sums to 1
+    # emission matrix, rows = states, cols = symbols, that is what initHMM expects
     emissionProbs[k, ] = colSums(rf$votes[rf$groundTruth == states[k], ]) / sum(rf$groundTruth == states[k])
+    # alternatively, 
+    for (o in 1:length(states)) {
+      emissionProbs[k,o] = sum(rf$votes[rf$groundTruth == states[k], o]) / sum(rf$groundTruth == states[k])
+    }
   }
   return(emissionProbs)
 }
@@ -387,6 +408,8 @@ loadData = function(labelDir, featDirs, names=NULL) {
       for (j in 1:length(featDirs)) {
         # for each feature type
         featFile = file.path(featDirs[j], names[i], file_path_sans_ext(labelFiles[k]))
+        # if there is no corresponding feature file for the given label file, skip it
+        # could be done in a better way, extract a list of feature files and check the list
         if (!file.exists(featFile)) {
           #skip this day
           checkFlag = FALSE
@@ -591,21 +614,38 @@ extractLabelsSingleFile = function(inputFile, outputDir, winSize) {
   
   # start reading record file
   all_bouts = read.csv(inputFile, header=TRUE, stringsAsFactors=FALSE)
-  dateFmt = getDateFmt(str_trim(all_bouts[1, ]$StartDateTime))
-  
+  # ----------------------
+  #dateFmt = getDateFmt(str_trim(all_bouts[1, ]$StartDateTime))
   annotations = unique(all_bouts$behavior)
-  actNames = sub(" ", "", annotations)
   identifiers = unique(all_bouts$identifier)
+  # ----------------------
+  dateFmt = "%m/%d/%Y %H:%M:%S"
+  annotations = unique(all_bouts$PA1)
+  identifiers = unique(all_bouts$PtID)
+
+  actNames = sub(" ", "", annotations)
+  
   for (id in 1:length(identifiers)) {
+    # ----------------------
     bouts = all_bouts[all_bouts$identifier == identifiers[id], ]
+    #bouts = all_bouts[all_bouts$PtID == identifiers[id], ]
+    
+    # ----------------------
     outputFile = file.path(outputDir, identifiers[id])
     r = 1
     l = 1
     label = "NULL"
+    #------------
     boutstart = strptime(str_trim(bouts[r, ]$StartDateTime), dateFmt)
     boutstop = strptime(str_trim(bouts[r, ]$EndDateTime), dateFmt)
+    #print(str_trim(bouts[r,]$DT))
+    #boutstart = strptime(str_trim(bouts[r, ]$DT), dateFmt)
+    #boutstop = strptime(str_trim(bouts[r, ]$DT), dateFmt)
+
+    #print(boutstop)
+    #------------
     timestamp = alignStart(winSize, boutstart)
-    
+    print(timestamp)
     day = timestamp$mday
     out = file.path(outputFile, paste0(strftime(timestamp, "%Y-%m-%d"), ".csv"))
     cat(strftime(timestamp, "%Y-%m-%d"), '\n')
@@ -661,7 +701,7 @@ extractLabelsSingleFile = function(inputFile, outputDir, winSize) {
 }
 extractLabelsDir = function(inputDir, outputDir, winSize, names = NULL) {
   # splits annotation files in a directory by days
-  # column names should be identifier,StartDateTime,EndDateTime,PA1
+  # column names should be identifier,StartDateTime,EndDateTime,PA1 (posture labels)
   
   files = list.files(inputDir)
   annotations = character(0)
@@ -673,6 +713,7 @@ extractLabelsDir = function(inputDir, outputDir, winSize, names = NULL) {
     bouts = read.csv(file.path(inputDir, files[i]), header=TRUE, stringsAsFactors=FALSE)
     outputFile = file.path(outputDir, file_path_sans_ext(files[i]))
     annotations = c(annotations, unique(bouts$behavior))
+    # extract data format from the header of the annotation files
     dateFmt = getDateFmt(str_trim(bouts[1, ]$StartDateTime))
     
     r = 1
@@ -787,6 +828,8 @@ extractFeatsPALMSOneFile = function(inputFile, outputDir, winSize) {
     }
   }
 }
+
+# extract relevant GPS features from the GPS data file
 extractFeatsPALMSDir = function(inputDir, outputDir, winSize, names = NULL) {
   # splits GPS file from PALMS by days
   if (is.null(names)) {
@@ -839,6 +882,8 @@ extractFeatsPALMSDir = function(inputDir, outputDir, winSize, names = NULL) {
     }
   }
 }
+
+# agregates features over a window size, so returns features for one data point
 computeOneGPSFeat = function(w, lastCoordinates) {
   #input: identifier,dateTime,speed,distance,duration,ele,elevationDelta,lat,lon,nsatUsed,nsatView,snrUsed,snrView,fixType
   fAvgSpeed = mean(w[, c("speed")])  # average speed
@@ -1035,6 +1080,8 @@ extractAllAccDir = function(inputDir, outputDir, winSize, names = NULL) {
     extractAccFeats(file.path(inputDir, names[i]), outputFile, winSize)
   }
 }
+
+# ??
 alignStart = function(winSize, start) {
   d0 = trunc(start, "days")
   s = as.numeric(difftime(start, d0, units="secs"))
