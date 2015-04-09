@@ -106,6 +106,7 @@ sensorsToFeatures = function(accelerometers=NULL, GPS=NULL, winSize, names=NULL)
   
   # accelerometers
   if (!is.null(accelerometers)) {
+    #print (accelerometers)
     for (i in 1:length(accelerometers)) {
       if (!file.exists(accelerometers[i])) {
         stop("accelerometer directory not found")
@@ -116,7 +117,7 @@ sensorsToFeatures = function(accelerometers=NULL, GPS=NULL, winSize, names=NULL)
         extractAllAccDir(accelerometers[i], accFeatDir, winSize, names)
       }
       featDirs = c(featDirs, accFeatDir)
-    }
+    }    
   }
   return(featDirs)
 }
@@ -199,9 +200,10 @@ trainRF = function(labelDir, featDirs, names, combineStanding=FALSE, strat=TRUE)
   trainDat$timestamp = NULL
   trainDat$PtID = NULL
   
+  print(trainDat)
   # pre-process - center and scale features
-  cat("pre-processing\n")
   preProcValues = preProcess(trainDat, method = c("center", "scale"))
+  
   trainDat = predict(preProcValues, trainDat)
   trainDat[is.na(trainDat)] = 0
   
@@ -391,9 +393,12 @@ computePriorProbs = function(stateSeq) {
 }
 
 loadData = function(labelDir, featDirs, names=NULL) {
+  print (labelDir)
+  print (featDirs)
   if (is.null(names)) {
     names = list.files(labelDir)
   }
+  print(names)
   if (length(names) == 0) {
     return(NULL)
   }
@@ -402,16 +407,20 @@ loadData = function(labelDir, featDirs, names=NULL) {
   for (i in 1:length(names)) {
     # for each participant
     labelFiles = list.files(file.path(labelDir, names[i]))
+    print(labelFiles)
     for (k in 1:length(labelFiles)) {
       # for each day
       checkFlag = TRUE
       for (j in 1:length(featDirs)) {
         # for each feature type
         featFile = file.path(featDirs[j], names[i], file_path_sans_ext(labelFiles[k]))
+        
         # if there is no corresponding feature file for the given label file, skip it
         # could be done in a better way, extract a list of feature files and check the list
         if (!file.exists(featFile)) {
-          #skip this day
+          #skip this day 
+          print("skipping the following")
+          print(featFile)
           checkFlag = FALSE
           break
         }
@@ -428,6 +437,7 @@ loadData = function(labelDir, featDirs, names=NULL) {
         l2 = data.frame(timestamp=data$timestamp, stringsAsFactors=FALSE)
         labels = merge(labels, l2, by="timestamp", all=FALSE)
         if (nrow(data) == nrow(labels)) {
+          print('*********************')
           all_data = rbind(all_data, data)
           all_labels = rbind(all_labels, labels)
         } else {
@@ -435,7 +445,7 @@ loadData = function(labelDir, featDirs, names=NULL) {
         } 
       }
     }
-  }
+  }  
   return(list(all_labels, all_data))
 }
 loadFeatures = function(featDirs,names=NULL) {
@@ -719,6 +729,11 @@ extractLabelsDir = function(inputDir, outputDir, winSize, names = NULL) {
     r = 1
     l = 1
     label = "NULL"
+    print(files[i])
+    print(dateFmt)
+    print(bouts[r, ]$StartDateTime)
+    if(nrow(bouts) < 2)
+      next
     boutstart = strptime(str_trim(bouts[r, ]$StartDateTime), dateFmt)
     boutstop = strptime(str_trim(bouts[r, ]$EndDateTime), dateFmt)
     timestamp = alignStart(winSize, boutstart)
